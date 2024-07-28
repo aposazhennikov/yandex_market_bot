@@ -1,0 +1,9 @@
+backoff
+pandas
+requests
+beautifulsoup4
+openai
+pillow
+telethon
+openpyxl
+httpx
