@@ -1,0 +1,8 @@
+Dockerfile
+*.venv
+__pycache__
+*.log
+.venv
+.log
+message.py
+message_new.py
