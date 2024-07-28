@@ -134,14 +134,14 @@ server {
 1. Создайте файл `.htpasswd` для аутентификации:
     ```bash
     sudo apt-get install apache2-utils
-    htpasswd -c /app/yandex_market/.htpasswd YOUR_USERNAME_TO_HTTP_ACCES_TO_THE_FILE_PRODUCTS_FROM_WEB
+    htpasswd -c /app/yandex_market/nginx/.htpasswd YOUR_USERNAME_TO_HTTP_ACCES_TO_THE_FILE_PRODUCTS_FROM_WEB
     ```
 
 2. Запустите контейнер Nginx:
     ```bash
     docker run -d -p 80:80 \
-      -v /app/yandex_market/nginx.conf:/etc/nginx/conf.d/default.conf \
-      -v /app/yandex_market/.htpasswd:/etc/nginx/.htpasswd \
+      -v /app/yandex_market/nging/nginx.conf:/etc/nginx/conf.d/default.conf \
+      -v /app/yandex_market/nginx/.htpasswd:/etc/nginx/.htpasswd \
       -v /app/yandex_market/app/:/usr/share/nginx/html/ \
       --restart always \
       --name nginx_yandex_market nginx:latest
