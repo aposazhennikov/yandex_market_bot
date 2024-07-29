@@ -170,6 +170,7 @@ server {
       -v /app/yandex_market/nginx/.htpasswd:/etc/nginx/.htpasswd \
       -v /app/yandex_market/app/:/usr/share/nginx/html/ \
       --restart always \
+      --network yandex_market_bot \
       --name nginx_yandex_market nginx:latest
     ```
 
