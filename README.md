@@ -51,12 +51,16 @@
     ```
 
 ### Запуск контейнера
-
+0. Создайте Docker network типа bridge 
+    ```bash
+    docker network create --driver bridge yandex_market_bot
+    ```
 1. Запустите контейнер:
     ```bash
     docker run -d \
       --name yandex_market_bot \
       --restart=always \
+      --network yandex_market_bot \
       -v /app/yandex_market/app:/app \
       -e API_ID="your_api_id" \
       -e API_HASH="your_api_hash" \
@@ -66,7 +70,7 @@
       -e OPENAI_PROXY_URL="http://login:password@your.vpn-or-proxy.com:3128" \
       -e ASSISTANT_ID="123" \
       -e DELAY_TIME=60 \
-      -e IMAGE_COUNT=3 \
+      -e IMAGE_COUNT=15 \
       yandex_market_bot 
     ```
 
@@ -128,10 +132,27 @@ server {
         root /usr/share/nginx/html;
     }
 
+    location /static {
+        auth_basic "Restricted Access";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+        proxy_pass http://yandex_market_bot:5000/static;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
-        return 403;
+        auth_basic "Restricted Access";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+        proxy_pass http://yandex_market_bot:5000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+
 ```
 
 ### Запуск Nginx контейнера
@@ -243,10 +264,19 @@ docker exec -it yandex_market_bot /bin/bash
 
 В зависимости от кол-ва ядер сервера на котором запускается код будет та или иная скорость выполнения скрипта, при использовании 3х ядерного сервера скрипт отработал с нуля(то есть полность создал файл products.xml) за 200секунд для 700 товаров.
 
+# Обновлено:
 
-# TODO:
+Добавлен WEB UI он написан на Framework'e Flask и запускается вместе с остальным скриптом в main.py он прослушивает на 0.0.0.0 и порту 5000, поэтому для того чтобы подключиться к нему мы и создаем docker network которую привязываем и к контейнеру с NGINX и к контейнеру с Python. Чтобы проверить доступность WEB UI можно сделать curl изнутри контейнера с nginx:
 
-- Написать Web UI для возможности менять в ручную цену какого-то товара.
+```bash
+docker exec -it nginx_yandex_market bash
+curl yandex_market_bot:5000 
+```
+Так как контейнеры объеденены одной сетью, имя контейнера является DNS и резолвится в IP.
+nginx обрабатывает / и перенаправляет в flask запросы.
+
+
+#  TODO:
 - Подумать как решить проблему с цветами товаров, иногда когда в наименовании товара есть цвет изображение к нему через BING ищется разных цветов...
 - Подумать о реализации заполнения всех параметров с помощью GPT.
 
