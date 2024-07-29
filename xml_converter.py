@@ -324,6 +324,10 @@ class XMLGenerator:
                     vendor.text = product_data['vendor']
                     count = ET.SubElement(offer, "count")
                     count.text = "1"
+                    archived = ET.SubElement(offer, "archived")
+                    archived.text = "false"
+                    disabled = ET.SubElement(offer, "disabled")
+                    disabled.text = "false"
                     price = ET.SubElement(offer, "price")
                     price.text = str(
                         round(product_data['calculated_price'], 2))
