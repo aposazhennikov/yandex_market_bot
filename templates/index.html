@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управления статическими правилами Яндекс Маркет цен</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Управления статическими правилами Яндекс Маркет цен</h1>
+        <div class="rule-form">
+            <div id="rule-inputs">
+                <div class="rule-input">
+                    <input type="text" id="new-id" placeholder="ID" class="id-input">
+                    <input type="text" id="new-price" placeholder="PRICE" class="price-input">
+                </div>
+            </div>
+            <div class="button-group-inline">
+                <button id="submit-rule-btn">ОТПРАВИТЬ ПРАВИЛО</button>
+                <button id="add-more-btn">ДОБАВИТЬ ЕЩЕ ОДНО</button>
+            </div>
+        </div>
+        <div class="button-group">
+            <button id="view-rules-btn">Посмотреть список всех правил</button>
+            <button id="delete-all-btn">Удалить все правила</button>
+        </div>
+        <div id="confirmation" class="hidden">
+            <p>Вы уверены что хотите удалить все созданные правила?</p>
+            <button id="confirm-yes-btn">ДА</button>
+            <button id="confirm-no-btn">НЕТ</button>
+        </div>
+        <div id="edit-delete-confirmation" class="hidden">
+            <p id="edit-delete-message"></p>
+            <button id="confirm-edit-delete-yes-btn">ДА</button>
+            <button id="confirm-edit-delete-no-btn">НЕТ</button>
+        </div>
+        <div id="rules-list" class="hidden"></div>
+    </div>
+    <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+</body>
+</html>
