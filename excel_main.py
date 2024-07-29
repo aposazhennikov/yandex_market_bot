@@ -7,6 +7,7 @@ from xml.etree import ElementTree as ET
 from xml.dom import minidom
 from xml_converter import XMLGenerator, image_count
 import re
+import json
 
 # Настройка логирования
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -76,13 +77,26 @@ def update_xml(file_xml, summary, products_file):
     root = tree.getroot()
     offers = root.find('shop').find('offers')
 
-    # Удаление строк
+    # Обновление архивных и отключенных строк
     for removed in summary['removed_rows']:
         if isinstance(removed, dict):
             for offer in offers.findall('offer'):
                 if offer.get('id') == removed['xmlid']:
-                    logging.info(f"Удаление offer с ID {removed['xmlid']}")
-                    offers.remove(offer)
+                    logging.info(f"Архивирование и отключение offer с ID {
+                                 removed['xmlid']}")
+                    archived = offer.find('archived')
+                    if archived is not None:
+                        archived.text = 'true'
+                    else:
+                        archived = ET.SubElement(offer, "archived")
+                        archived.text = 'true'
+
+                    disabled = offer.find('disabled')
+                    if disabled is not None:
+                        disabled.text = 'true'
+                    else:
+                        disabled = ET.SubElement(offer, "disabled")
+                        disabled.text = 'true'
 
     # Обновление цены
     for updated in summary['updated_price']:
@@ -109,38 +123,56 @@ def update_xml(file_xml, summary, products_file):
     # Добавление новых строк
     for added in summary['added_rows']:
         if isinstance(added, dict):
-            logging.info(f"Добавление нового offer с ID {added['xmlid']}")
-            product_data = xml_generator.process_product(added)
-            if product_data:
-                offer = ET.SubElement(
-                    offers, "offer", id=str(product_data['xmlid']))
-                name = ET.SubElement(offer, "name")
-                name.text = product_data['name']
-                vendor = ET.SubElement(offer, "vendor")
-                vendor.text = product_data['vendor']
-                count = ET.SubElement(offer, "count")
-                count.text = "1"
-                price = ET.SubElement(offer, "price")
-                price.text = str(product_data['calculated_price'])
-                categoryId = ET.SubElement(offer, "categoryId")
-                categoryId.text = product_data['categoryId'] if product_data['categoryId'] else "1"
-                currencyId = ET.SubElement(offer, "currencyId")
-                currencyId.text = "RUR"
-                description = ET.SubElement(offer, "description")
-                description.text = product_data['description']
+            found = False
+            for offer in offers.findall('offer'):
+                if offer.get('id') == added['xmlid']:
+                    archived = offer.find('archived')
+                    disabled = offer.find('disabled')
+                    if archived is not None and disabled is not None and archived.text == 'true':
+                        logging.info(f"Активирование offer с ID {
+                                     added['xmlid']}")
+                        archived.text = 'false'
+                        disabled.text = 'false'
+                        found = True
+                        break
+            if not found:
+                logging.info(f"Добавление нового offer с ID {added['xmlid']}")
+                product_data = xml_generator.process_product(added)
+                if product_data:
+                    offer = ET.SubElement(
+                        offers, "offer", id=str(product_data['xmlid']))
+                    name = ET.SubElement(offer, "name")
+                    name.text = product_data['name']
+                    vendor = ET.SubElement(offer, "vendor")
+                    vendor.text = product_data['vendor']
+                    count = ET.SubElement(offer, "count")
+                    count.text = "1"
+                    archived = ET.SubElement(offer, "archived")
+                    archived.text = "false"
+                    disabled = ET.SubElement(offer, "disabled")
+                    disabled.text = "false"
+                    price = ET.SubElement(offer, "price")
+                    price.text = str(product_data['calculated_price'])
+                    categoryId = ET.SubElement(offer, "categoryId")
+                    categoryId.text = product_data['categoryId'] if product_data['categoryId'] else "1"
+                    currencyId = ET.SubElement(offer, "currencyId")
+                    currencyId.text = "RUR"
+                    description = ET.SubElement(offer, "description")
+                    description.text = product_data['description']
 
-                for image_url in product_data.get('pictures', []):
-                    picture = ET.SubElement(offer, "picture")
-                    picture.text = image_url
+                    for image_url in product_data.get('pictures', []):
+                        picture = ET.SubElement(offer, "picture")
+                        picture.text = image_url
 
-                warranty_days = ET.SubElement(offer, "warranty-days")
-                warranty_days.text = "P1Y"
-                service_life_days = ET.SubElement(offer, "service-life-days")
-                service_life_days.text = "P1Y"
-                dimensions = ET.SubElement(offer, "dimensions")
-                dimensions.text = product_data['dimensions']
-                weight = ET.SubElement(offer, "weight")
-                weight.text = product_data['weight']
+                    warranty_days = ET.SubElement(offer, "warranty-days")
+                    warranty_days.text = "P1Y"
+                    service_life_days = ET.SubElement(
+                        offer, "service-life-days")
+                    service_life_days.text = "P1Y"
+                    dimensions = ET.SubElement(offer, "dimensions")
+                    dimensions.text = product_data['dimensions']
+                    weight = ET.SubElement(offer, "weight")
+                    weight.text = product_data['weight']
 
     # Удаление лишних пробелов и форматирование XML с отступами
     xml_str = ET.tostring(root, encoding='utf-8')
@@ -156,6 +188,38 @@ def update_xml(file_xml, summary, products_file):
     with open(file_xml, "w", encoding="utf-8") as f:
         f.write(parsed_str)
     logging.info(f"XML файл успешно обновлен: {file_xml}")
+
+
+def apply_rules(file_xml, rules_file):
+    if not os.path.exists(rules_file):
+        logging.info(f"Файл {rules_file} не найден.")
+        return
+
+    with open(rules_file, 'r') as file:
+        rules = json.load(file)
+
+    tree = ET.parse(file_xml)
+    root = tree.getroot()
+    offers = root.find('shop').find('offers')
+
+    for offer in offers.findall('offer'):
+        offer_id = offer.get('id')
+        if offer_id in rules:
+            price = offer.find('price')
+            if price is not None and price.text != rules[offer_id]:
+                logging.info(f"Изменение цены для offer с ID {offer_id}: {
+                             price.text} -> {rules[offer_id]}")
+                price.text = rules[offer_id]
+
+    xml_str = ET.tostring(root, encoding='utf-8')
+    parsed_str = minidom.parseString(xml_str).toprettyxml(indent="  ")
+    parsed_str = '\n'.join(
+        [line for line in parsed_str.split('\n') if line.strip()])
+
+    with open(file_xml, "w", encoding="utf-8") as f:
+        f.write(parsed_str)
+    logging.info(
+        f"Правила из {rules_file} успешно применены к XML файлу: {file_xml}")
 
 
 def excel_main():
@@ -196,7 +260,7 @@ def excel_main():
             for row in summary['updated_description']:
                 logger.info(f"  {row}")
 
-        if summary['removed_rows'] != "No changes" or summary['updated_price'] != "No changes" or summary['updated_description'] != "No changes":
+        if summary['added_rows'] != "No changes" or summary['removed_rows'] != "No changes" or summary['updated_price'] != "No changes" or summary['updated_description'] != "No changes":
             logger.info("Обнаружены изменения. Обновление XML файла.")
             update_xml(file_xml, summary, file_new)
         else:
@@ -212,6 +276,9 @@ def excel_main():
         end_time = time.time()
         total_time = end_time - start_time
         logger.info(f"Скрипт выполнен за {total_time:.2f} секунд")
+
+    # Применение правил из rules.json
+    apply_rules(file_xml, 'rules.json')
 
 
 if __name__ == "__main__":
