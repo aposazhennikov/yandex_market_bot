@@ -9,6 +9,13 @@ import threading
 
 # Настройки логирования
 logging.basicConfig(level=logging.INFO)
+# Этот скрипт является основным входным пунктом для запуска приложения.
+# Он выполняет следующие задачи:
+# 1. Настраивает окружение, из переменных окружения достает необходимые данные(передаются в docker-compose.yml).
+# 2. Инициализирует web-приложение написанное на Flask, оно отвечает за добавление кастомных правил,
+# которые будут применяться поверх основных цен в карточках товаров, нужны, например для акций или быстрых важных фиксов.
+# 3. Проверяет телеграмм бота поставщика, скачивает файл xlsx где находятся товары..
+# 4. Логирует все действия и изменения, выполняемые скриптом.
 
 # Получение значений из переменных окружения
 api_id = os.getenv('API_ID')
@@ -26,6 +33,9 @@ bot_username = os.getenv('BOT_USERNAME', 'pavilion89bot')
 app = Flask(__name__)
 rules_file = 'rules.json'
 
+# Правила кастомные, которые добавляются поверх всего остального записанного в Products.xml добавляются через Web UI интерфейс
+# http://market-rules.aposazhennikov.ru/
+
 
 def load_rules():
     if not os.path.exists(rules_file):
@@ -37,6 +47,8 @@ def load_rules():
 def save_rules(rules):
     with open(rules_file, 'w') as file:
         json.dump(rules, file)
+
+# Часть связанная с FLASK
 
 
 @app.before_request
@@ -93,6 +105,7 @@ def edit_rule():
     return jsonify(success=True)
 
 
+# Асинхронная функция, нужна для создания telegram client, а асинхронная для ускорения работы, чтобы распаралеллить процессы.
 async def telegram_client():
     client = TelegramClient(session_name, api_id, api_hash)
     await client.start()
@@ -111,12 +124,14 @@ async def telegram_client():
             logging.info(f"Файл скачан и сохранен по пути: {file_path}")
             # Запуск скрипта сравнения и обновления XML
             excel_main()
-
+    # Луп, делаем каждые 30 секунд отправку боту сообщения, чтобы он нам прислал табличку excel и мы ее скачали.
     while True:
         logging.info("Отправка сообщения боту для получения Excel файла")
         await client.send_message(bot_username, 'Получить Excel-файл')
         logging.info("Сплю на 30 секунд")
         await asyncio.sleep(delay_time)
+
+# на 5000 порут стартуем наш WEB UI
 
 
 def start_flask_app():

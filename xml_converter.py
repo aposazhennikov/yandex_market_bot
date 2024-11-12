@@ -17,10 +17,30 @@ from PIL import Image
 from io import BytesIO
 import httpx
 
+# Этот скрипт предназначен для генерации XML-файла из данных, содержащихся в Excel-файле.
+# Он выполняет следующие задачи:
+# 1. Читает данные о товарах из Excel-файла. (xmlid, dscription, price)
+# 2. Использует API OpenAI для получения дополнительных данных о товарах.
+# (вес, размеры упаковки, меняет имя товара, определяет vendor и категорию товара) делается это потому
+# что это обязательные параметры условия яндекса
+# 3. Ищет изображения для товаров в интернете.(BING.com потому что у него бесплатный API)
+# 4. Генерирует XML-файл с информацией о товарах, включая их изображения и другие атрибуты.
+# 5. Логирует все действия и изменения, выполняемые скриптом.
+
 # Настройка прокси
 proxy_url = os.getenv('OPENAI_PROXY_URL')
 # Количество pictures которое ищем для каждой карточки!
 image_count = int(os.getenv('IMAGE_COUNT', '15'))
+
+# API ключ ChatGPT
+api_key = os.getenv('OPENAI_API_KEY')
+
+# Создание клиента OpenAI
+# client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=api_key, http_client=httpx.Client(
+    proxies=proxy_url)) if proxy_url else OpenAI(api_key=api_key)
+
+
 # Настройка логирования
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 # Логирование в консоль
@@ -32,14 +52,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(console_handler)
 
-# API ключ ChatGPT
-api_key = os.getenv('OPENAI_API_KEY')
 
-# Создание клиента OpenAI
-# client = OpenAI(api_key=api_key)
-client = OpenAI(api_key=api_key, http_client=httpx.Client(
-    proxies=proxy_url)) if proxy_url else OpenAI(api_key=api_key)
-
+# Класс для поиска изображений(url'ов), одна из его особенностей он проверяет валидност ьизображений
+# Согласно стандартам Яндекс Маркета
 
 class ImageSearcher:
     def __init__(self):
@@ -122,6 +137,8 @@ class ImageSearcher:
                         query} после {retries} попыток")
         return all_images
 
+# Основной класс который создает с нуля Products.xml если его нет, или если нет products.xlsx
+
 
 class XMLGenerator:
     def __init__(self, products_file, image_count=image_count):
@@ -134,19 +151,38 @@ class XMLGenerator:
         return pd.read_excel(self.products_file, usecols=['xmlid', 'description', 'price'], dtype={'xmlid': str})
 
     def calculate_price(self, price):
-        if price < 20000:
-            return price * 1.32
-        elif 20000 <= price < 35000:
-            return price * 1.31
-        elif 35000 <= price < 60000:
-            return price * 1.30
-        elif 60000 <= price < 85000:
-            return price * 1.29
-        elif 85000 <= price < 105000:
-            return price * 1.28
-        else:
-            return price * 1.275
+        if price < 10000:
+            return price * 1.45
+        elif 10000 <= price < 11000:
+            return price * 1.43
+        elif 11000 <= price < 13000:
+            return price * 1.42
+        elif 13000 <= price < 15000:
+            return price * 1.41
+        elif 15000 <= price < 18000:
+            return price * 1.395
+        elif 18000 <= price < 20000:
+            return price * 1.387
+        elif 20000 <= price < 30000:
+            return price * 1.36
+        elif 30000 <= price < 40000:
+            return price * 1.35
+        elif 40000 <= price < 50000:
+            return price * 1.34
+        elif 50000 <= price < 60000:
+            return price * 1.33
+        elif 60000 <= price < 70000:
+            return price * 1.325
+        elif 70000 <= price < 80000:
+            return price * 1.318
+        elif 80000 <= price < 90000:
+            return price * 1.315
+        elif 90000 <= price < 100000:
+            return price * 1.308
+        elif price >= 100000:
+            return price * 1.305
 
+    # Функция используется в том случае, если запрос к GPT не прошел и вендора не удалось извлечь из GPT.
     def extract_vendor(self, description):
         words = description.split()
         for word in words:
@@ -163,6 +199,9 @@ class XMLGenerator:
             attempt += 1
             try:
                 # Создание потока сообщений
+                # Это нужно чтобы в многопоточном режиме запускать обработку позиций из EXCEL таблички, иначе
+                # в случае если мы создаем с нуля Products.xml слишком долго отрабатывает скрипт. Сейчас при 1000 позиций в Excel
+                # скрипт на сервере с 2 ядрами отрабатывает за 700 секунд, создавая с нуля файл products.xml
                 thread = client.beta.threads.create(
                     messages=[
                         {"role": "user", "content": product_description}
@@ -247,13 +286,26 @@ class XMLGenerator:
         product_data['price'] = row['price']
         product_data['calculated_price'] = self.calculate_price(row['price'])
 
+        all_images = self.image_searcher.get_image_urls(
+            row['description'], self.image_count)
         all_images = self.image_searcher.get_image_urls(result_from_gpt[4] if result_from_gpt[4] not in [
-                                                        "", None] else row['description'], self.image_count)
+            "", None] else row['description'], self.image_count)
 
         product_data['pictures'] = all_images
-        product_data['dimensions'] = result_from_gpt[0]
-        product_data['weight'] = result_from_gpt[1]
-        product_data['categoryId'] = result_from_gpt[3]
+        if result_from_gpt[0] != "" and result_from_gpt[0] != None:
+            product_data['dimensions'] = result_from_gpt[0]
+        else:
+            product_data['dimensions'] = "20/20/20"
+
+        if result_from_gpt[1] != "" and result_from_gpt[1] != None:
+            product_data['weight'] = result_from_gpt[1]
+        else:
+            product_data['weight'] = "0.9"
+
+        if result_from_gpt[3] != "" and result_from_gpt[3] != None:
+            product_data['categoryId'] = result_from_gpt[3]
+        else:
+            product_data['categoryId'] = 1
 
         time.sleep(0.06)
         return product_data

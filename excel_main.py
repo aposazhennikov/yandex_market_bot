@@ -9,6 +9,19 @@ from xml_converter import XMLGenerator, image_count
 import re
 import json
 
+# Этот скрипт предназначен для сравнения двух Excel-файлов (products_old.xlsx и products.xlsx),
+# выявления изменений и обновления XML-файла (products.xml) на основе этих изменений.
+# Он также применяет пользовательские правила из файла rules.json к XML-файлу.
+# Скрипт выполняет следующие основные задачи:
+# 1. Сравнивает старый и новый Excel-файлы, чтобы определить добавленные, удаленные и обновленные товары.
+# 2. Обновляет XML-файл на основе выявленных изменений.
+# 3. Применяет пользовательские правила к XML-файлу.
+# 4. Логирует все изменения и действия, выполняемые скриптом.
+
+# текущий существенный минус данной реализации, это то что операции выполняются и хранятся в памяти RAM до тех пор, пока не запишется
+# файл products.xml, это плохо, не только потому что возможны утечки памяти и излишнее потребление ресурсов, но в основном,
+# по тому, что если что-то пойдет не так, и не запишет в файл информацию, придется отрабатывать с начала, изменения потеряются.
+
 # Настройка логирования
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 current_time = datetime.now().strftime("%Y_%m_%d_%H_%M")
@@ -18,8 +31,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(console_handler)
 
+# Класс, который сравнивает products_old.xlsx и products.xlsx и добавляет в файл products.xml изменения
+
 
 class ExcelComparator:
+
     def __init__(self, file_new, file_old):
         self.file_new = file_new
         self.file_old = file_old
@@ -69,6 +85,42 @@ class ExcelComparator:
 
         return summary
 
+# Обновленная формула, которая добавляет к цене из Products.xlsx коэффициент, чтобы продажа на Yandex Market'e
+# была выгодна.
+
+
+def calculate_price(price):
+    if price < 10000:
+        return price * 1.45
+    elif 10000 <= price < 11000:
+        return price * 1.43
+    elif 11000 <= price < 13000:
+        return price * 1.42
+    elif 13000 <= price < 15000:
+        return price * 1.41
+    elif 15000 <= price < 18000:
+        return price * 1.395
+    elif 18000 <= price < 20000:
+        return price * 1.387
+    elif 20000 <= price < 30000:
+        return price * 1.36
+    elif 30000 <= price < 40000:
+        return price * 1.35
+    elif 40000 <= price < 50000:
+        return price * 1.34
+    elif 50000 <= price < 60000:
+        return price * 1.33
+    elif 60000 <= price < 70000:
+        return price * 1.325
+    elif 70000 <= price < 80000:
+        return price * 1.318
+    elif 80000 <= price < 90000:
+        return price * 1.315
+    elif 90000 <= price < 100000:
+        return price * 1.308
+    elif price >= 100000:
+        return price * 1.305
+
 
 def update_xml(file_xml, summary, products_file):
     xml_generator = XMLGenerator(products_file)
@@ -90,7 +142,6 @@ def update_xml(file_xml, summary, products_file):
                     else:
                         archived = ET.SubElement(offer, "archived")
                         archived.text = 'true'
-
                     disabled = offer.find('disabled')
                     if disabled is not None:
                         disabled.text = 'true'
@@ -98,29 +149,20 @@ def update_xml(file_xml, summary, products_file):
                         disabled = ET.SubElement(offer, "disabled")
                         disabled.text = 'true'
 
-    # Обновление цены
+    # Обновление цен
     for updated in summary['updated_price']:
-        if isinstance(updated, dict):
+        if isinstance(updated, dict) and 'price_new' in updated:
             for offer in offers.findall('offer'):
                 if offer.get('id') == updated['xmlid']:
-                    price = offer.find('price')
-                    if price is not None:
+                    price_element = offer.find('price')
+                    if price_element is not None:
+                        new_price = calculate_price(
+                            float(updated['price_new']))
                         logging.info(f"Обновление цены для offer с ID {updated['xmlid']}: {
-                                     price.text} -> {updated['price_new']}")
-                        price.text = str(updated['price_new'])
+                                     price_element.text} -> {new_price}")
+                        price_element.text = str(new_price)
 
-    # Обновление описания
-    for updated in summary['updated_description']:
-        if isinstance(updated, dict):
-            for offer in offers.findall('offer'):
-                if offer.get('id') == updated['xmlid']:
-                    description = offer.find('description')
-                    if description is not None:
-                        logging.info(f"Обновление описания для offer с ID {updated['xmlid']}: {
-                                     description.text} -> {updated['description_new']}")
-                        description.text = updated['description_new']
-
-    # Добавление новых строк
+    # Добавление новых строк или активация существующих
     for added in summary['added_rows']:
         if isinstance(added, dict):
             found = False
@@ -128,11 +170,17 @@ def update_xml(file_xml, summary, products_file):
                 if offer.get('id') == added['xmlid']:
                     archived = offer.find('archived')
                     disabled = offer.find('disabled')
-                    if archived is not None and disabled is not None and archived.text == 'true':
+                    if archived is not None and disabled is not None and archived.text == 'true' and disabled.text == 'true':
                         logging.info(f"Активирование offer с ID {
                                      added['xmlid']}")
                         archived.text = 'false'
                         disabled.text = 'false'
+                        price_element = offer.find('price')
+                        if price_element is not None:
+                            new_price = calculate_price(float(added['price']))
+                            logging.info(f"Обновление цены для offer с ID {added['xmlid']}: {
+                                         price_element.text} -> {new_price}")
+                            price_element.text = str(new_price)
                         found = True
                         break
             if not found:
@@ -189,6 +237,9 @@ def update_xml(file_xml, summary, products_file):
         f.write(parsed_str)
     logging.info(f"XML файл успешно обновлен: {file_xml}")
 
+# Функция в которой к файлу productx.xml применяются кастомные правила созданные через WebUI
+#  market-rules.aposazhennikov.ru
+
 
 def apply_rules(file_xml, rules_file):
     if not os.path.exists(rules_file):
@@ -223,6 +274,7 @@ def apply_rules(file_xml, rules_file):
 
 
 def excel_main():
+    # Проверяем наличие нужных файлов, если их нет будем с нуля создавать products.xml
     if os.path.exists('products.xlsx') and os.path.exists('products_old.xlsx') and os.path.exists('products.xml'):
         file_new = 'products.xlsx'
         file_old = 'products_old.xlsx'

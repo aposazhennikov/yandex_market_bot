@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+
+  https-portal:
+    image: steveltn/https-portal:1
+    container_name: nginx-ya-market
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: always
+    environment:
+      STAGE: 'production'
+      DOMAINS: 'ya.market:password@market.aposazhennikov.ru, ya.market:password@market-rules.aposazhennikov.ru -> http://ya-market-bot:5000'
+      
+      # ya.market:password -> логин и пароль Basic Nginx Auth для закрытия страниц! Далее классический синтаксис https-portal ->
+      #  перенаправление на разные endpoints, на контейнер с ya-market( там джанго приложение с web ui где можно прописывать кастомные правила)
+      # которые будут применятся на товары поверх основной формулы market-rules.aposazhennikov.ru и market.aposazhennikov.ru это обычный файлик!
+
+    depends_on:
+     - ya-market-bot
+    volumes:
+      - ./ssl_certs:/var/lib/https-portal
+      - /app/yandex_market/products.xml:/var/www/vhosts/market.aposazhennikov.ru/products.xml
+      - /app/market.aposazhennikov.ru/production/:/var/lib/https-portal/market.aposazhennikov.ru/production/
+  ya-market-bot:
+    build:
+     context: /app/yandex_market
+    container_name: ya-market-bot
+    restart: always
+    volumes:
+      - /app/yandex_market:/app
+    environment:
+      # Переменные API_ID, API_HASH, PHONE_NUMBER и BOT_USERNAME нужны
+      # для библиотеки python telethon часть логики для парсинга бота поставщика в телеграмм
+      # и скачивания от туда excel файла с товарами
+      API_ID: ""
+      API_HASH: ""
+      PHONE_NUMBER: "+7"
+      BOT_USERNAME: "pavilion89bot"
+      # OPENAI_API_KEY нужен для запросов к ChatGPT, Он генерирует описание, размеры товара и его вес, а также меняет имя товара
+      # русифицирует цвет товара, PROXY нужен только для случаев, если это приложение размещено на РФ сервере.
+      # ASSISTANT_ID - ID асистента, CHAT_GPT где описан промпт.
+      OPENAI_API_KEY: "sk-None-123"
+      OPENAI_PROXY_URL: "http://login_vpn:password_vpn@vpn.com:3128"
+      ASSISTANT_ID: "asst_0aOmnABQ00mYul2S6RFiG1aP"
+      # Время в секундах через которое автоматически перезапускать скрипт
+      DELAY_TIME: 100
+      # Кол-во изображений которое нужно добавлять в новые карточки товара(ищем в BING.com у которого бесплатный API)
+      IMAGE_COUNT: 2
